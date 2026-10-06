@@ -22,6 +22,12 @@ import QuartzCore
         let id: ObjectIdentifier
         let level: Int
     }
+    /// CGPoint isn't Hashable before macOS 15, and the written-tile tracking keys by exact tile origin.
+    private struct TileOrigin: Hashable {
+        let x: CGFloat
+        let y: CGFloat
+        init(_ point: CGPoint) { x = point.x; y = point.y }
+    }
     private struct Entry {
         /// Held so the identifier can't be reused by another object while the texture is kept.
         let source: AnyObject
@@ -40,7 +46,7 @@ import QuartzCore
     private final class StrokeTexture {
         let texture: MTLTexture
         let image: CIImage
-        var written: [CGPoint: ObjectIdentifier] = [:]
+        var written: [TileOrigin: ObjectIdentifier] = [:]
         init(texture: MTLTexture, image: CIImage) {
             self.texture = texture
             self.image = image
@@ -156,7 +162,7 @@ import QuartzCore
         strokes[id] = (stroke, entry, frame)
         let writes = TileWrites(renderer: self, into: entry.texture, mask: stroke.isMask)
         for patch in stroke.patches {
-            let key = patch.rect.origin, identity = ObjectIdentifier(patch.image)
+            let key = TileOrigin(patch.rect.origin), identity = ObjectIdentifier(patch.image)
             guard entry.written[key] != identity else { continue }
             if writes.place(patch.image, at: patch.rect) { entry.written[key] = identity }
         }
