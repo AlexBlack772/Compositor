@@ -372,12 +372,12 @@ final class InlineTextEditor: NSView, NSTextViewDelegate {
 
     /// The arrows for the edge or corner a handle resizes, turned with the text box.
     private func handleCursor(_ index: Int) -> NSCursor {
-        let positions: [NSCursor.FrameResizePosition] = [.topLeft, .top, .topRight, .right, .topLeft, .top, .topRight, .right]
+        let positions: [FrameResizePosition] = [.topLeft, .top, .topRight, .right, .topLeft, .top, .topRight, .right]
         let rotation = canvas?.session.textDraft?.transform?.rotation ?? 0
         let turns = (Int((rotation / 45).rounded()) % 8 + 8) % 8
-        let ordered: [NSCursor.FrameResizePosition] = [.topLeft, .top, .topRight, .right]
+        let ordered: [FrameResizePosition] = [.topLeft, .top, .topRight, .right]
         let position = ordered[(ordered.firstIndex(of: positions[index])! + turns) % 4]
-        return .frameResize(position: position, directions: [.inward, .outward])
+        return position.cursor
     }
 
     /// How far either side of an edge counts as that edge, in the box's own units. Capped so a small box keeps a

@@ -44,8 +44,8 @@ struct TransformOverlayGeometry: Equatable {
         let angle = atan2(handles[2].y - handles[0].y, handles[2].x - handles[0].x)
         let offsets: [CGFloat] = [.pi / 4, .pi / 2, 3 * .pi / 4, 0, .pi / 4, .pi / 2, 3 * .pi / 4, 0]
         let direction = (Int(((angle + offsets[index]) / (.pi / 4)).rounded()) % 4 + 4) % 4
-        let positions: [NSCursor.FrameResizePosition] = [.right, .bottomRight, .bottom, .topRight]
-        return .frameResize(position: positions[direction], directions: [.inward, .outward])
+        let positions: [FrameResizePosition] = [.right, .bottomRight, .bottom, .topRight]
+        return positions[direction].cursor
     }
 }
 

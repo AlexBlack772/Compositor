@@ -135,9 +135,6 @@ struct JPEGPreview: View {
     let pixelHeight: Int
     @Binding var zoom: Double?
     @Environment(\.displayScale) private var displayScale
-    @State private var position = ScrollPosition()
-    @State private var offset = CGPoint.zero
-    @State private var dragStart: CGPoint?
 
     /// The zoom at which the whole image fits `frame`.
     static func fitZoom(width: Int, height: Int, in frame: CGSize, displayScale: CGFloat) -> Double {
@@ -148,31 +145,22 @@ struct JPEGPreview: View {
     static func step(from zoom: Double, in direction: Int) -> Double? {
         direction > 0 ? steps.first { $0 > zoom * 1.001 } : steps.last { $0 < zoom * 0.999 }
     }
+    /// The image's size on screen at `zoom`, in points.
+    static func shownSize(_ zoom: Double, width: Int, height: Int, displayScale: CGFloat) -> CGSize {
+        CGSize(width: CGFloat(width) / max(1, displayScale) * zoom, height: CGFloat(height) / max(1, displayScale) * zoom)
+    }
 
     var body: some View {
         GeometryReader { geometry in
             if let zoom {
-                let size = shownSize(zoom)
-                ScrollView([.horizontal, .vertical]) {
-                    // Nearest-neighbor from 100% up, so each pixel of the JPEG and its artifacts shows as it is.
-                    Image(decorative: image, scale: 1).resizable().interpolation(zoom >= 1 ? .none : .high)
-                        .frame(width: size.width, height: size.height)
-                        .frame(minWidth: geometry.size.width, minHeight: geometry.size.height)
+                // Scroll-position-driven dragging and the grab pointers exist only on macOS 15; earlier systems
+                // move the image with the wheel or trackpad alone.
+                if #available(macOS 15.0, *) {
+                    JPEGPreviewPan(image: image, pixelWidth: pixelWidth, pixelHeight: pixelHeight,
+                                   viewport: geometry.size, zoom: $zoom, displayScale: displayScale)
+                } else {
+                    scroller(zoom: zoom, viewport: geometry.size)
                 }
-                .scrollIndicators(.visible)
-                .scrollPosition($position)
-                .onScrollGeometryChange(for: CGPoint.self, of: { $0.contentOffset }) { _, new in offset = new }
-                .gesture(DragGesture(minimumDistance: 1)
-                    .onChanged { drag in
-                        let start = dragStart ?? offset
-                        dragStart = start
-                        position.scrollTo(point: CGPoint(x: start.x - drag.translation.width, y: start.y - drag.translation.height))
-                    }
-                    .onEnded { _ in dragStart = nil })
-                .onTapGesture(count: 2) { self.zoom = nil }
-                .onAppear { keepCentered(from: nil, to: zoom, in: geometry.size) }
-                .onChange(of: zoom) { old, new in keepCentered(from: old, to: new, in: geometry.size) }
-                .pointerStyle(dragStart == nil ? .grabIdle : .grabActive)
             } else {
                 Image(decorative: image, scale: 1).resizable().interpolation(.high).scaledToFit()
                     .frame(width: geometry.size.width, height: geometry.size.height)
@@ -182,23 +170,72 @@ struct JPEGPreview: View {
         }
     }
 
-    /// The image's size on screen at `zoom`, in points.
-    private func shownSize(_ zoom: Double) -> CGSize {
-        CGSize(width: CGFloat(pixelWidth) / max(1, displayScale) * zoom, height: CGFloat(pixelHeight) / max(1, displayScale) * zoom)
+    /// The image at `zoom` in a plain scroll view, moved with the wheel or trackpad.
+    private func scroller(zoom: Double, viewport: CGSize) -> some View {
+        let size = Self.shownSize(zoom, width: pixelWidth, height: pixelHeight, displayScale: displayScale)
+        return ScrollView([.horizontal, .vertical]) {
+            // Nearest-neighbor from 100% up, so each pixel of the JPEG and its artifacts shows as it is.
+            Image(decorative: image, scale: 1).resizable().interpolation(zoom >= 1 ? .none : .high)
+                .frame(width: size.width, height: size.height)
+                .frame(minWidth: viewport.width, minHeight: viewport.height)
+        }
+        .scrollIndicators(.visible)
+        .onTapGesture(count: 2) { self.zoom = nil }
+    }
+}
+
+/// The zoomed preview on macOS 15 and later, where it can also be dragged around by pointing: the drag drives the
+/// scroll position, and zooming keeps the middle of the view on the same part of the image.
+@available(macOS 15.0, *)
+private struct JPEGPreviewPan: View {
+    let image: CGImage
+    let pixelWidth: Int
+    let pixelHeight: Int
+    let viewport: CGSize
+    @Binding var zoom: Double?
+    let displayScale: CGFloat
+    @State private var position = ScrollPosition()
+    @State private var offset = CGPoint.zero
+    @State private var dragStart: CGPoint?
+
+    private var size: CGSize {
+        JPEGPreview.shownSize(zoom ?? 1, width: pixelWidth, height: pixelHeight, displayScale: displayScale)
+    }
+
+    var body: some View {
+        ScrollView([.horizontal, .vertical]) {
+            // Nearest-neighbor from 100% up, so each pixel of the JPEG and its artifacts shows as it is.
+            Image(decorative: image, scale: 1).resizable().interpolation((zoom ?? 1) >= 1 ? .none : .high)
+                .frame(width: size.width, height: size.height)
+                .frame(minWidth: viewport.width, minHeight: viewport.height)
+        }
+        .scrollIndicators(.visible)
+        .scrollPosition($position)
+        .onScrollGeometryChange(for: CGPoint.self, of: { $0.contentOffset }) { _, new in offset = new }
+        .gesture(DragGesture(minimumDistance: 1)
+            .onChanged { drag in
+                let start = dragStart ?? offset
+                dragStart = start
+                position.scrollTo(point: CGPoint(x: start.x - drag.translation.width, y: start.y - drag.translation.height))
+            }
+            .onEnded { _ in dragStart = nil })
+        .onTapGesture(count: 2) { self.zoom = nil }
+        .onAppear { keepCentered(from: nil, to: zoom) }
+        .onChange(of: zoom) { old, new in keepCentered(from: old, to: new) }
+        .pointerStyle(dragStart == nil ? .grabIdle : .grabActive)
     }
 
     /// Zooming keeps the middle of the view on the same part of the image; coming from Fit, it starts at the center.
-    private func keepCentered(from old: Double?, to new: Double?, in view: CGSize) {
+    private func keepCentered(from old: Double?, to new: Double?) {
         guard let new else { return }
-        let size = shownSize(new)
         var middle = CGPoint(x: size.width / 2, y: size.height / 2)
         if let old {
-            let before = shownSize(old)
-            let fx = before.width > 0 ? (offset.x + min(view.width, before.width) / 2) / before.width : 0.5
-            let fy = before.height > 0 ? (offset.y + min(view.height, before.height) / 2) / before.height : 0.5
+            let before = JPEGPreview.shownSize(old, width: pixelWidth, height: pixelHeight, displayScale: displayScale)
+            let fx = before.width > 0 ? (offset.x + min(viewport.width, before.width) / 2) / before.width : 0.5
+            let fy = before.height > 0 ? (offset.y + min(viewport.height, before.height) / 2) / before.height : 0.5
             middle = CGPoint(x: fx * size.width, y: fy * size.height)
         }
-        position.scrollTo(point: CGPoint(x: min(max(0, middle.x - view.width / 2), max(0, size.width - view.width)),
-                                         y: min(max(0, middle.y - view.height / 2), max(0, size.height - view.height))))
+        position.scrollTo(point: CGPoint(x: min(max(0, middle.x - viewport.width / 2), max(0, size.width - viewport.width)),
+                                         y: min(max(0, middle.y - viewport.height / 2), max(0, size.height - viewport.height))))
     }
 }

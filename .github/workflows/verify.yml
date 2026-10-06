@@ -43,6 +43,19 @@ jobs:
           -derivedDataPath DerivedData
           CODE_SIGN_IDENTITY=-
 
+      # The app ships universal (14.7 includes Intel Macs); compiling for x86_64 on every push
+      # catches architecture-only breakage early. Cross-compiled on the arm64 runner; not run.
+      - name: Build for testing (x86_64)
+        run: >
+          xcodebuild build-for-testing
+          -project Compositor.xcodeproj
+          -scheme Compositor
+          -destination 'platform=macOS,arch=x86_64'
+          -configuration Debug
+          -derivedDataPath DerivedData-x86
+          CODE_SIGN_IDENTITY=-
+          -skip-testing:CompositorUITests
+
       # These two suites show real windows and time them, so they run alone after the rest.
       - name: Run unit tests in parallel
         run: >

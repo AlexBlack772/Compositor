@@ -1,0 +1,59 @@
+name: Build
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    name: Compositor.app (universal)
+    # Release build for machines without Xcode 26: downloads from the Actions artifacts.
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Select Xcode 26.6
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
+
+      - name: Resolve Swift packages
+        run: >
+          xcodebuild -resolvePackageDependencies
+          -project Compositor.xcodeproj
+          -scheme Compositor
+          -onlyUsePackageVersionsFromResolvedFile
+
+      # Ad-hoc signed (CODE_SIGN_IDENTITY=-): fine for personal use; the app may need a right-click
+      # Open the first time, since Gatekeeper has no Developer ID to verify.
+      - name: Build Release (arm64 + x86_64)
+        run: >
+          xcodebuild build
+          -project Compositor.xcodeproj
+          -scheme Compositor
+          -destination 'generic/platform=macOS'
+          -configuration Release
+          -derivedDataPath DerivedData
+          CODE_SIGN_IDENTITY=-
+          CODE_SIGNING_REQUIRED=NO
+
+      - name: Zip Compositor.app
+        run: >
+          cd DerivedData/Build/Products/Release
+          && ditto -c -k --keepParent Compositor.app Compositor-universal.zip
+
+      - name: Upload app artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: Compositor-universal
+          path: DerivedData/Build/Products/Release/Compositor-universal.zip
+          retention-days: 30

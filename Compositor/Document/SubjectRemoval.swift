@@ -5,7 +5,13 @@ import CoreImage
 nonisolated enum SubjectRemoval {
     enum Failure: LocalizedError {
         case noSubject
-        var errorDescription: String? { "No foreground subject was detected in this layer. Try an image with a more distinct subject." }
+        case unsupported
+        var errorDescription: String? {
+            switch self {
+            case .noSubject: "No foreground subject was detected in this layer. Try an image with a more distinct subject."
+            case .unsupported: "Remove Background and Select Subject require Apple Silicon."
+            }
+        }
     }
     /// Vision's own mask for an image, kept while the panel is open so moving a slider only redoes the refining.
     private static let cache = MaskCache()
@@ -27,7 +33,9 @@ nonisolated enum SubjectRemoval {
     /// Vision's raw subject mask, white over the subject: the model has no settings of its own, so everything the
     /// panel offers is done to this afterwards by `refined`.
     private static func vision(_ image: CGImage) throws -> CGImage {
-        try cache.mask(for: image) {
+        // Vision's instance mask only runs on Apple Silicon; Intel builds fail up front with a clear message.
+        #if arch(arm64)
+        return try cache.mask(for: image) {
             let handler = VNImageRequestHandler(cgImage: image, orientation: .up)
             let request = VNGenerateForegroundInstanceMaskRequest()
             try handler.perform([request])
@@ -35,6 +43,9 @@ nonisolated enum SubjectRemoval {
             let buffer = try result.generateScaledMaskForImage(forInstances: result.allInstances, from: handler)
             return try PixelAdjust.render(CIImage(cvPixelBuffer: buffer), width: image.width, height: image.height, isMask: true)
         }
+        #else
+        throw Failure.unsupported
+        #endif
     }
 
     /// The panel's three controls, in the order they help:

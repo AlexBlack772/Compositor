@@ -18,7 +18,7 @@ nonisolated enum ObjectSelection {
 
         var errorDescription: String? {
             switch self {
-            case .unsupported: "Object Selection requires macOS 14 or later."
+            case .unsupported: "Object Selection requires macOS 14 or later with Apple Silicon."
             case .render: "The object mask could not be rendered."
             }
         }
@@ -31,7 +31,12 @@ nonisolated enum ObjectSelection {
         let x = Int(point.x.rounded(.down)), y = Int(point.y.rounded(.down))
         guard point.x.isFinite, point.y.isFinite, (0..<width).contains(x), (0..<height).contains(y) else { return nil }
         guard #available(macOS 14.0, *) else { throw Failure.unsupported }
+        // Vision's instance mask only runs on Apple Silicon; Intel builds fail up front with a clear message.
+        #if arch(arm64)
         return try selectAvailable(in: image, at: point, edgeOffset: edgeOffset, smoothEdges: smoothEdges)
+        #else
+        throw Failure.unsupported
+        #endif
     }
 
     @available(macOS 14.0, *)
