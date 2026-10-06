@@ -35,6 +35,7 @@ jobs:
 
       # Ad-hoc signed (CODE_SIGN_IDENTITY=-): fine for personal use; the app may need a right-click
       # Open the first time, since Gatekeeper has no Developer ID to verify.
+      # singlefile: Xcode 26.6's compiler crashes cross-compiling whole-module Release for x86_64.
       - name: Build Release (arm64 + x86_64)
         run: >
           xcodebuild build
@@ -45,6 +46,7 @@ jobs:
           -derivedDataPath DerivedData
           CODE_SIGN_IDENTITY=-
           CODE_SIGNING_REQUIRED=NO
+          SWIFT_COMPILATION_MODE=singlefile
 
       - name: Zip Compositor.app
         run: >
