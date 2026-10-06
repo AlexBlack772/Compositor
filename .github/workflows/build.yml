@@ -15,8 +15,8 @@ permissions:
 
 jobs:
   app:
-    name: Compositor.app (universal)
-    # Release build for machines without Xcode 26: downloads from the Actions artifacts.
+    name: Compositor.app (x86_64)
+    # Release build for Intel Macs (14.7+): downloaded from the Actions artifacts. Cross-compiled on the runner.
     runs-on: macos-26
     timeout-minutes: 60
     steps:
@@ -36,12 +36,12 @@ jobs:
       # Ad-hoc signed (CODE_SIGN_IDENTITY=-): fine for personal use; the app may need a right-click
       # Open the first time, since Gatekeeper has no Developer ID to verify.
       # singlefile: Xcode 26.6's compiler crashes cross-compiling whole-module Release for x86_64.
-      - name: Build Release (arm64 + x86_64)
+      - name: Build Release (x86_64)
         run: >
           xcodebuild build
           -project Compositor.xcodeproj
           -scheme Compositor
-          -destination 'generic/platform=macOS'
+          -destination 'platform=macOS,arch=x86_64'
           -configuration Release
           -derivedDataPath DerivedData
           CODE_SIGN_IDENTITY=-
@@ -51,11 +51,11 @@ jobs:
       - name: Zip Compositor.app
         run: >
           cd DerivedData/Build/Products/Release
-          && ditto -c -k --keepParent Compositor.app Compositor-universal.zip
+          && ditto -c -k --keepParent Compositor.app Compositor-intel.zip
 
       - name: Upload app artifact
         uses: actions/upload-artifact@v7
         with:
-          name: Compositor-universal
-          path: DerivedData/Build/Products/Release/Compositor-universal.zip
+          name: Compositor-intel
+          path: DerivedData/Build/Products/Release/Compositor-intel.zip
           retention-days: 30
