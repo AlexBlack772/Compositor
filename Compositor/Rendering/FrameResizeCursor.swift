@@ -8,7 +8,7 @@ enum FrameResizePosition {
     /// The two-way frame-resize cursor on macOS 15; earlier systems show the classic resize cursor, or drawn
     /// diagonal arrows for the corners, which AppKit has no public cursor for.
     var cursor: NSCursor {
-        if #available(macOS 15.0, *) { return nsPosition.cursor }
+        if #available(macOS 15.0, *) { return .frameResize(position: nsPosition, directions: [.inward, .outward]) }
         switch self {
         case .top, .bottom: return .resizeUpDown
         case .left, .right: return .resizeLeftRight
