@@ -35,12 +35,15 @@ jobs:
 
       # Ad-hoc signed (CODE_SIGN_IDENTITY=-): fine for personal use; the app may need a right-click
       # Open the first time, since Gatekeeper has no Developer ID to verify.
-      # Xcode 26.6's SIL optimizer crashes cross-compiling Release for x86_64, so this falls back from -O through
-      # -Osize to -Onone and keeps whichever level first builds; the winner is noted in the step summary.
+      # Xcode 26.6's SIL optimizer crashes cross-compiling -O for x86_64 (its Debug, and every arm64 build, are
+      # fine), so earlier toolchains are tried first for an optimized build; 26.6 -Onone is the guaranteed fallback.
       - name: Build Release (x86_64)
         run: |
-          for level in -O -Osize -Onone; do
-            echo "::group::Build with SWIFT_OPTIMIZATION_LEVEL=$level"
+          for attempt in "Xcode_26.5 -O" "Xcode_26.4.1 -O" "Xcode_26.2 -O" "Xcode_26.6 -Onone"; do
+            set -- $attempt
+            xcode=$1; level=$2
+            echo "::group::Build with $xcode, SWIFT_OPTIMIZATION_LEVEL=$level"
+            sudo xcode-select -s "/Applications/$xcode.app"
             if xcodebuild build \
               -project Compositor.xcodeproj \
               -scheme Compositor \
@@ -54,11 +57,11 @@ jobs:
               SWIFT_OPTIMIZATION_LEVEL=$level \
               > build.log 2>&1; then
               echo "::endgroup::"
-              echo "Built with SWIFT_OPTIMIZATION_LEVEL=$level" | tee -a "$GITHUB_STEP_SUMMARY"
+              echo "Built with $xcode, SWIFT_OPTIMIZATION_LEVEL=$level" | tee -a "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
             echo "::endgroup::"
-            echo "Build failed with $level; last lines:"
+            echo "Build failed with $xcode $level; last lines:"
             tail -5 build.log
             rm -rf DerivedData build.log
           done
