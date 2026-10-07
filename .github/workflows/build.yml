@@ -39,7 +39,7 @@ jobs:
       # fine), so earlier toolchains are tried first for an optimized build; 26.6 -Onone is the guaranteed fallback.
       - name: Build Release (x86_64)
         run: |
-          for attempt in "Xcode_26.5 -O" "Xcode_26.4.1 -O" "Xcode_26.2 -O" "Xcode_26.6 -Onone"; do
+          for attempt in "Xcode_26.2 -O" "Xcode_26.5 -O" "Xcode_26.4.1 -O" "Xcode_26.6 -Onone"; do
             set -- $attempt
             xcode=$1; level=$2
             echo "::group::Build with $xcode, SWIFT_OPTIMIZATION_LEVEL=$level"
