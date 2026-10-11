@@ -1,7 +1,10 @@
 # Compositor
 
 > **Intel port.** This repository is a fork that builds Compositor for **Intel Macs with macOS 14.7 or later**
-> (the original requires macOS 26). It is built through GitHub Actions — see [BUILD.md](BUILD.md) — and a few
+> (the original requires macOS 26).
+> **Download:** [Compositor 1.4.9 for Intel](https://github.com/AlexBlack772/Compositor/releases/latest) —
+> ad-hoc signed, so open it the first time via **right-click → Open**.
+> It is built through GitHub Actions — see [BUILD.md](BUILD.md) — and a few
 > features work differently or are unavailable on this hardware and system: see [COMPATIBILITY.md](COMPATIBILITY.md).
 
 Adobe Photoshop costs too much and tools like GIMP don’t feel familiar enough for me to stay in flow. That’s why I built Compositor.
