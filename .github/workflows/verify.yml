@@ -1,8 +1,12 @@
 name: Verify
 
+# Not on push: the fork builds through the Build workflow, and a push shouldn't queue a test
+# run behind it. Runs weekly in full, on pull requests, and by hand from the Actions tab.
 on:
-  push:
   pull_request:
+  schedule:
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
 
 concurrency:
   group: verify-${{ github.workflow }}-${{ github.ref }}

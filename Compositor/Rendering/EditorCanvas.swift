@@ -64,6 +64,8 @@ final class CanvasView: NSView {
     private var lastDragPoint: CGPoint?
     /// Where a middle-button pan last was (see otherMouseDown).
     private var middlePanPoint: CGPoint?
+    /// A middle-button zoom with Command or Control held: where it started, and the zoom then.
+    private var middleZoom: (start: CGPoint, zoom: CGFloat)?
     /// Where Shift was last pressed in the stroke in progress (or where the stroke started, if it was held then):
     /// the line the stroke is kept on while Shift stays down.
     private var brushAxisAnchor: CGPoint?
@@ -858,12 +860,15 @@ final class CanvasView: NSView {
         }
     }
 
+    /// The gray around the canvas, black in Canvas Only (F).
+    private var surround: CGFloat { session.canvasOnly ? 0 : 0.105 }
+
     override func draw(_ dirtyRect: NSRect) {
         // The grid and a text frame being dragged follow the pixels under them.
         if lines.frame != bounds { lines.frame = bounds }
         lines.needsDisplay = true
         if drawOnGPU(dirtyRect) { return }
-        NSColor(white: 0.105, alpha: 1).setFill()
+        NSColor(white: surround, alpha: 1).setFill()
         dirtyRect.fill()
         guard let document = session.document,
               let context = NSGraphicsContext.current?.cgContext else { return }
@@ -1497,7 +1502,7 @@ final class CanvasView: NSView {
         hoverTrackingArea = area
     }
     private func updateBrushCursor() {
-        let shows = session.tool.isBrushTool && !spaceHeld && !picking && middlePanPoint == nil
+        let shows = session.tool.isBrushTool && !spaceHeld && !picking && middlePanPoint == nil && middleZoom == nil
         let diameter = session.brushStroke?.settings.diameter ?? session.brushSettings.diameter
         // Clone Stamp also marks where it is copying from and, between strokes, previews inside
         // the circle what a click would stamp there.
@@ -1797,6 +1802,11 @@ final class CanvasView: NSView {
         }
         if spaceHeld || session.tool == .hand {
             lastDragPoint = point
+            // Held closed for the whole drag, as a crop or transform drag holds its cursor: Space repeats while it's
+            // held, and each repeat put the open hand back.
+            dragCursor = .closedHand
+            cursorLockWindow = window
+            cursorLockWindow?.disableCursorRects()
             NSCursor.closedHand.set()
         } else if session.tool.isBrushTool, let document = session.document {
             let pixel = session.viewport.documentPoint(from: point, documentSize: document.size)
@@ -1997,26 +2007,41 @@ final class CanvasView: NSView {
         lastDragPoint = point
         redrawRulers()
     }
-    /// The middle button pans from any tool, without reaching for Space or the Hand tool. It keeps
-    /// its own drag point so it can't disturb whatever the left button is in the middle of.
+    /// The middle button pans from any tool, without reaching for Space or the Hand tool, and with Command or Control
+    /// held zooms, as in Blender: up zooms in, down out, about where it was pressed. It keeps its own drag point so it
+    /// can't disturb whatever the left button is in the middle of.
     private func panPoint(of event: NSEvent) -> CGPoint { convert(event.locationInWindow, from: nil) }
     override func otherMouseDown(with event: NSEvent) {
         guard event.buttonNumber == 2, session.document != nil else { super.otherMouseDown(with: event); return }
-        middlePanPoint = panPoint(of: event)
+        let point = panPoint(of: event)
+        if !event.modifierFlags.intersection([.command, .control]).isEmpty {
+            middleZoom = (point, session.viewport.zoom)
+            Self.zoomInCursor.set()
+        } else {
+            middlePanPoint = point
+            NSCursor.closedHand.set()
+        }
         if session.tool.isBrushTool { updateBrushCursor() }
-        NSCursor.closedHand.set()
     }
     override func otherMouseDragged(with event: NSEvent) {
-        guard let last = middlePanPoint else { super.otherMouseDragged(with: event); return }
         let point = panPoint(of: event)
+        if let zoom = middleZoom {
+            // The view is flipped, so up is toward smaller y. Doubling for every 100 points, as the Zoom tool drags.
+            let factor = pow(2, (zoom.start.y - point.y) / 100)
+            session.zoom(to: zoom.zoom * factor, anchor: zoom.start)
+            (factor < 1 ? Self.zoomOutCursor : Self.zoomInCursor).set()
+            return
+        }
+        guard let last = middlePanPoint else { super.otherMouseDragged(with: event); return }
         session.viewport.translate(by: CGSize(width: point.x - last.x, height: point.y - last.y))
         middlePanPoint = point
         redrawRulers()
     }
     override func otherMouseUp(with event: NSEvent) {
-        guard middlePanPoint != nil else { super.otherMouseUp(with: event); return }
+        guard middlePanPoint != nil || middleZoom != nil else { super.otherMouseUp(with: event); return }
         middlePanPoint = nil
-        // The closed hand was set directly, so put the tool's own cursor back rather than waiting
+        middleZoom = nil
+        // The hand or magnifier was set directly, so put the tool's own cursor back rather than waiting
         // for the next move.
         refreshLassoCursor(event.modifierFlags)
         if session.tool.isBrushTool { updateBrushCursor() }
@@ -2098,6 +2123,9 @@ final class CanvasView: NSView {
             if session.transformEdit?.persistent == false { session.commitTransform() }
         }
         lastDragPoint = nil
+        releaseDragCursor()
+        // Still holding Space (or on the Hand tool), the hand opens again as the button comes up.
+        if spaceHeld || session.tool == .hand { NSCursor.openHand.set() }
         // Leaving mid-drag keeps the drag's cursor, so a drag released outside the canvas (over
         // the Layers panel, say) must put the arrow back itself.
         if session.document != nil {
@@ -2650,7 +2678,7 @@ extension CanvasView {
         func gray(_ white: CGFloat, alpha: CGFloat = 1) -> CIImage {
             CIImage(color: CIColor(red: white, green: white, blue: white, alpha: alpha))
         }
-        var frame = gray(0.105).cropped(to: full)
+        var frame = gray(surround).cropped(to: full)
         guard rect.intersects(full) else { return frame }
         // The document's shadow, then its checkerboard: 10-point squares from its top-left corner.
         let shadow = CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: 0.35)).cropped(to: rect)

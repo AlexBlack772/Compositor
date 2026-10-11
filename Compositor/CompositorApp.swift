@@ -4,6 +4,7 @@ import Sparkle
 @main
 struct CompositorApp: App {
     @NSApplicationDelegateAdaptor(CompositorApplicationDelegate.self) private var applicationDelegate
+    @AppStorage("navigator.visible") private var showsNavigator = false
     private var session: EditorSession { applicationDelegate.session }
     var body: some Scene {
         Window("Compositor", id: "editor") {
@@ -78,8 +79,13 @@ struct CompositorApp: App {
                     Button("Export PNG…") { Task { await applicationDelegate.projects.exportPNG() } }
                         .configuredKeyboardShortcut("e", modifiers: [.command, .shift])
                         .disabled(session.document == nil || !applicationDelegate.projects.canStart)
-                    Button("Export JPEG…") { Task { await applicationDelegate.projects.exportJPEG() } }
+                    // Export As on JPEG.
+                    Button("Export JPEG…") { Task { await applicationDelegate.projects.exportAs(start: .jpeg) } }
                         .configuredKeyboardShortcut("s", modifiers: [.command, .option, .shift])
+                        .disabled(session.document == nil || !applicationDelegate.projects.canStart)
+                    // PNG, JPEG or PDF, sized and previewed; ⌥⇧⌘W, as Photoshop's Export As.
+                    Button("Export As…") { Task { await applicationDelegate.projects.exportAs() } }
+                        .configuredKeyboardShortcut("w", modifiers: [.command, .option, .shift])
                         .disabled(session.document == nil || !applicationDelegate.projects.canStart)
                     Divider()
                     Button("Close Project") {
@@ -91,10 +97,21 @@ struct CompositorApp: App {
                 // Grouped: a commands builder takes at most ten items.
                 Group {
                     CommandGroup(after: .appInfo) {
-                        Button("Check for Updates…") { applicationDelegate.updater.checkForUpdates(nil) }
+                        Button("Check for Updates…") { applicationDelegate.updater.checkForUpdates() }
                     }
                     CommandGroup(after: .toolbar) {
-                        // With a dialog's preview open (Export JPEG), these zoom that preview rather than the canvas.
+                        Button("Search Commands…") {
+                            CommandPaletteController.shared.toggle(session: session, over: applicationDelegate.projects.window)
+                        }
+                        .configuredKeyboardShortcut("f", modifiers: [.command])
+                        // A plain F, shown as menus show keys; the app hands an F meant for a text field to the field
+                        // first (see CompositorApplicationDelegate).
+                        Toggle("Toggle Fullscreen", isOn: Binding(get: { session.canvasOnly },
+                                                            set: { _ in applicationDelegate.toggleCanvasOnly() }))
+                            .keyboardShortcut("f", modifiers: [])
+                            .disabled(!session.canToggleCanvasOnly)
+                        Divider()
+                        // With a dialog's preview open (Export As), these zoom that preview rather than the canvas.
                         Button("Fit Canvas") {
                             if let preview = session.previewZoom { preview(.fit) } else { session.fit() }
                         }.configuredKeyboardShortcut("0").disabled(session.document == nil)
@@ -111,10 +128,9 @@ struct CompositorApp: App {
                             if let preview = session.previewZoom { preview(.zoomOut) } else { session.zoomKeyboard(by: -1) }
                         }
                             .configuredKeyboardShortcut("-").disabled(session.document == nil)
+                        Toggle("Navigator (300% and above)", isOn: $showsNavigator)
                         Toggle("Pixel Grid (800% and above)", isOn: Binding(get: { session.showsPixelGrid },
                                                                               set: { session.showsPixelGrid = $0 }))
-                        Toggle("Snap", isOn: Binding(get: { session.snappingEnabled },
-                                                     set: { session.snappingEnabled = $0 }))
                         Toggle("Show Transform Controls", isOn: Binding(get: { session.showsTransformControls },
                                                                           set: { session.showsTransformControls = $0 }))
                             .configuredKeyboardShortcut("h").disabled(session.tool != .move || session.document == nil)
@@ -272,6 +288,10 @@ struct CompositorApp: App {
                         .disabled(session.document == nil || !applicationDelegate.projects.canStart)
                     Group {
                         Divider()
+                        Button("Rotate Canvas 90° Clockwise") { session.rotateCanvas(clockwise: true) }
+                            .disabled(!session.canEditLayers)
+                        Button("Rotate Canvas 90° Counterclockwise") { session.rotateCanvas(clockwise: false) }
+                            .disabled(!session.canEditLayers)
                         Button("Flip Canvas Horizontal") { session.flipCanvas(horizontally: true) }
                             .disabled(!session.canEditLayers)
                         Button("Flip Canvas Vertical") { session.flipCanvas(horizontally: false) }
@@ -279,6 +299,12 @@ struct CompositorApp: App {
                     }
                 }
                 CommandMenu("Filter") {
+                    Button(session.lastFilter.map { "Last Filter: " + $0.rawValue } ?? "Last Filter") {
+                        Task { await session.repeatLastFilter() }
+                    }
+                        // ⌃⌘F, as in Photoshop; ⌘F is the command palette.
+                        .configuredKeyboardShortcut("f", modifiers: [.command, .control]).disabled(!session.canRepeatLastFilter)
+                    Divider()
                     ForEach(FilterKind.allCases.filter { $0 != .contentAwareFill && !$0.isImageAdjustment }, id: \.self) { kind in
                         Button("\(kind.rawValue)…") { session.beginFilter(kind) }
                             .disabled(!(kind == .vignette ? session.canVignette : session.canAdjustColors) || session.hueSaturation != nil)
