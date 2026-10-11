@@ -19,17 +19,21 @@ There is no local build on Linux or on a Mac without a full Xcode 26 — the pro
 swiftc -parse Compositor/**/*.swift
 ```
 
-## Producing an Intel release build
+## How to build the app
 
-```sh
-gh workflow run build.yml --repo <owner>/Compositor --ref main
-gh run watch --repo <owner>/Compositor $(gh run list --repo <owner>/Compositor --workflow=Build --limit 1 --json databaseId --jq '.[0].databaseId')
-gh run download <run-id> --repo <owner>/Compositor -n Compositor-intel -D ~/Downloads/Compositor-intel
-```
-
-Or in the browser: Actions → **Build** → the finished run → Artifacts → `Compositor-intel`.
-Unzip, move `Compositor.app` to `/Applications`, and open it the first time via **right-click → Open** (the build is
-ad-hoc signed, so Gatekeeper has no Developer ID to verify).
+1. Push the code to `main`. A plain push builds nothing (Verify no longer runs on push); the app comes from the
+   **Build** workflow.
+2. Start it: in the browser, Actions → **Build** → **Run workflow** → branch `main`; or from the command line:
+   ```sh
+   gh workflow run build.yml --repo <owner>/Compositor --ref main
+   ```
+3. Wait for the run to finish (~5–10 minutes). On failure, read the run's log, fix, push, run it again.
+4. Download the app: Actions → the finished run → Artifacts → `Compositor-intel`, or:
+   ```sh
+   gh run download <run-id> --repo <owner>/Compositor -n Compositor-intel -D ~/Downloads/Compositor-intel
+   ```
+5. Unzip, move `Compositor.app` to `/Applications`, and open it the first time via **right-click → Open**: the
+   build is ad-hoc signed, so Gatekeeper has no Developer ID to verify.
 
 ## The toolchain cascade (why not just `-O` on the newest Xcode)
 
@@ -91,5 +95,5 @@ build on Xcode 26.2 or add `SWIFT_OPTIMIZATION_LEVEL=-Onone` for newer toolchain
 ## Platform notes
 
 - Intel Macs (macOS 14.7+) are the target of the CI release build; the app also runs on Apple Silicon.
-- Object Selection, Remove Background and Select Subject (Vision's instance-mask) only work on Apple Silicon; on
-  Intel they fail with a clear message instead of crashing.
+- What differs from the original on this port — Vision's instance-mask features, cursor and toolbar fallbacks,
+  the release channel — is listed in [COMPATIBILITY.md](COMPATIBILITY.md).
